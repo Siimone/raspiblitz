@@ -178,35 +178,34 @@ if [ ${mountOK} -eq 1 ]; then
     fi
   fi
 
-  # check if there is ftp data to continue
-  downloadProgressExists=$(sudo ls /mnt/hdd/ 2>/dev/null | grep "download" -c)
-  if [ ${downloadProgressExists} -eq 1 ]; then
-    # check if there is a running screen session to return to
-    noScreenSession=$(screen -ls | grep -c "No Sockets found")
-    if [ ${noScreenSession} -eq 0 ]; then 
-      echo "found download in data .. resuming"
-      /home/admin/50downloadHDD.sh
-      exit 1
-    fi
-  fi
-
   # HDD is empty - get Blockchain
+
+  # detect hardware version of RaspberryPi
+  # https://www.unixtutorial.org/command-to-confirm-raspberry-pi-model
+  raspberryPi=$(cat /proc/device-tree/model | cut -d " " -f 3 | sed 's/[^0-9]*//g')
+  if [ ${#raspberryPi} -eq 0 ]; then
+    raspberryPi=0
+  fi
+  syncComment="ULTRA SLOW"
+  if [ ${raspberryPi} -gt 3 ]; then
+    syncComment="BEST+SLOW"
+  fi
 
   #Bitcoin
   if [ ${network} = "bitcoin" ]; then
     echo "Bitcoin Options"
     menuitem=$(dialog --clear --beep --backtitle "RaspiBlitz" --title "Getting the Blockchain" \
-    --menu "You need a copy of the Bitcoin Blockchain - you have 5 options:" 13 75 5 \
+    --menu "You need a copy of the Bitcoin Blockchain - you have 4 options:" 13 75 5 \
     T "TORRENT  --> MAINNET + TESTNET thru Torrent (DEFAULT)" \
     C "COPY     --> BLOCKCHAINDATA from another node with SCP" \
     N "CLONE    --> BLOCKCHAINDATA from 2nd HDD (extra cable)"\
-    S "SYNC     --> MAINNET thru Bitcoin Network (ULTRA SLOW)" 2>&1 >/dev/tty)
+    S "SYNC     --> MAINNET thru Bitcoin Network (${syncComment})" 2>&1 >/dev/tty)
 
   # Litecoin
   elif [ ${network} = "litecoin" ]; then
     echo "Litecoin Options"
     menuitem=$(dialog --clear --beep --backtitle "RaspiBlitz" --title "Getting the Blockchain" \
-    --menu "You need a copy of the Litecoin Blockchain - you have 3 options:" 13 75 4 \
+    --menu "You need a copy of the Litecoin Blockchain - you have 2 options:" 13 75 4 \
     T "TORRENT  --> MAINNET thru Torrent (DEFAULT)" \
     S "SYNC     --> MAINNET thru Litecoin Network (FALLBACK+SLOW)" 2>&1 >/dev/tty)
 
@@ -232,6 +231,7 @@ if [ ${mountOK} -eq 1 ]; then
               ;;              
           S)
               /home/admin/50syncHDD.sh
+              /home/admin/10setupBlitz.sh
               ;;
   esac
   exit 1

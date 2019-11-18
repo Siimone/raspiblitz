@@ -20,13 +20,19 @@ sudo chmod 777 -R /mnt/hdd/temp 2>/dev/null
 localip=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1 -d'/')
 echo "localIP='${localip}'"
 
-# temp
-tempC=$(echo "scale=1; $(cat /sys/class/thermal/thermal_zone0/temp)/1000" | bc)
-echo "tempCelsius='${tempC}'"
+# temp - no measurement in a VM
+tempC=0
+if [ -d "/sys/class/thermal/thermal_zone0/" ]; then
+  tempC=$(echo "scale=1; $(cat /sys/class/thermal/thermal_zone0/temp)/1000" | bc)
+  echo "tempCelsius='${tempC}'"
+fi
 
 # uptime in seconds
 uptime=$(awk '{printf("%d\n",$1 + 0.5)}' /proc/uptime)
 echo "uptime=${uptime}"
+
+# get UPS info (if configured)
+/home/admin/config.scripts/blitz.ups.sh status
 
 # count restarts of bitcoind/litecoind
 startcountBlockchain=$(cat /home/admin/systemd.blockchain.log 2>/dev/null | grep -c "STARTED")
@@ -121,7 +127,7 @@ if [ ${lndRunning} -eq 1 ]; then
 
   # get LND info
   lndRPCReady=1
-  lndinfo=$(sudo -u bitcoin lncli getinfo 2>/mnt/hdd/temp/.lnd.error)
+  lndinfo=$(sudo -u bitcoin lncli --chain=${network} --network=${chain}net getinfo 2>/mnt/hdd/temp/.lnd.error)
 
   # check if error on request
   lndErrorFull=$(cat /mnt/hdd/temp/.lnd.error 2>/dev/null)
@@ -214,14 +220,18 @@ if [ ${lndRunning} -eq 1 ]; then
 
     # lnd scan progress
     scanTimestamp=$(echo ${lndinfo} | jq -r '.best_header_timestamp')
+    nowTimestamp=$(date +%s)
+    if [ ${scanTimestamp} -gt ${nowTimestamp} ]; then
+      scanTimestamp=${nowTimestamp}
+    fi
     if [ ${#scanTimestamp} -gt 0 ]; then
       echo "scanTimestamp=${scanTimestamp}"
-      scanDate=$(date -d @${scanTimestamp})
+      scanDate=$(date -d @${scanTimestamp} 2>/dev/null)
       echo "scanDate='${scanDate}'"
-
+      
       # calculate LND scan progress by seconds since Genesisblock
       genesisTimestamp=1230940800
-      nowTimestamp=$(date +%s)
+
       totalSeconds=$(echo "${nowTimestamp}-${genesisTimestamp}" | bc)
       scannedSeconds=$(echo "${scanTimestamp}-${genesisTimestamp}" | bc)
       scanProgress=$(echo "scale=2; $scannedSeconds*100/$totalSeconds" | bc)

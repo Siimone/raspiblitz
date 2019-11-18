@@ -7,6 +7,12 @@ if [ "$1" = "-h" ] || [ "$1" = "-help" ]; then
  exit 1
 fi
 
+isRaspbian=$(cat /etc/os-release 2>/dev/null | grep -c 'Raspbian')
+if [ ${isRaspbian} -eq 0 ]; then
+  echo "the OS is not Raspbian - the stresstest is only for the Raspberry Pi"
+  exit 0
+fi
+
 # Based on https://github.com/bamarni/pi64/issues/4#issuecomment-292707581
 # sysbench manual: http://imysql.com/wp-content/uploads/2014/10/sysbench-manual.pdf
 
@@ -20,7 +26,29 @@ if [ ${sysbenchInstalled} -eq 0 ];then
 fi
 
 # do debug outputs to the STDERR - so that the STDOUT is just the results in the end
-echo "RaspiBlitz Hardwaretest v0.1" >&2
+echo "RaspiBlitz Hardwaretest v0.2" >&2
+
+# detect hardware version of RaspberryPi
+# https://www.unixtutorial.org/command-to-confirm-raspberry-pi-model
+raspberryPi=$(cat /proc/device-tree/model | cut -d " " -f 3 | sed 's/[^0-9]*//g')
+if [ ${#raspberryPi} -eq 0 ]; then
+  raspberryPi=0
+fi
+echo "RaspberryPi Model Version: ${raspberryPi}"
+if [ ${raspberryPi} -lt 4 ]; then
+  # raspberryPi 3 and lower (microUSB power connector)
+  voltWARN=1230000
+  voltFAIL=1200100
+  tempWARNING=6500
+  tempCRTICAL=6999
+else
+  # raspberryPi 4 and up (USB-C power connector)
+  voltWARN=833200
+  voltFAIL=823200
+  tempWARNING=6900
+  tempCRTICAL=7799
+fi
+
 echo "Starting sysbench to run for 60 seconds (--max-time=60 --cpu-max-prime=10000)" >&2
 
 # result values
@@ -55,11 +83,11 @@ for (( n=0; n<15; ++n )); do
     voltFloat=$(echo "${CoreVoltage/V/}*1000000" | bc)
     voltInt=${voltFloat/.*}
     #echo "V -> ${voltFloat}/${voltInt}"
-    if [ ${voltInt} -lt 1200100 ] && [ ${powerWARN} -gt 1 ]; then
+    if [ ${voltInt} -lt ${voltFAIL} ] && [ ${powerWARN} -gt 1 ]; then
       ((powerFAIL=powerFAIL+1))
       echo "--> Power CRITICAL detected" >&2
     fi
-    if [ ${voltInt} -lt 1250000 ]; then
+    if [ ${voltInt} -lt ${voltWARN} ]; then
       ((powerWARN=powerWARN+1))
       echo "--> Power WARN detected" >&2
     fi
@@ -71,11 +99,11 @@ for (( n=0; n<15; ++n )); do
     tempFloat=$(echo "${Temp/\'C/}*100" | bc)
     tempInt=${tempFloat/.*}
     #echo "T -> ${tempFloat}/${tempInt}"
-    if [ ${tempInt} -gt 6999 ]; then
+    if [ ${tempInt} -gt ${tempCRTICAL} ]; then
       ((tempFAIL=tempFAIL+1))
       echo "--> Temp CRITICAL detected" >&2
     fi
-    if [ ${tempInt} -gt 6500 ]; then
+    if [ ${tempInt} -gt ${tempWARNING} ]; then
       ((tempWARN=tempWARN+1))
       echo "--> Temp WARN detected" >&2
     fi
@@ -87,6 +115,7 @@ for (( n=0; n<15; ++n )); do
 done
 
 if [ ${#filenameForReport} -eq 0 ]; then
+  echo "raspberryPi=${raspberryPi}"
   echo "powerFAIL=${powerFAIL}"
   echo "powerWARN=${powerWARN}"
   echo "powerMIN='${powerMIN} microVolt'"
@@ -94,7 +123,8 @@ if [ ${#filenameForReport} -eq 0 ]; then
   echo "tempWARN=${tempWARN}"
   echo "tempMAX='${tempMAX} centiGrad'"
 else
-  echo "powerFAIL=${powerFAIL}" >${filenameForReport}
+  echo "raspberryPi=${raspberryPi}" >${filenameForReport}
+  echo "powerFAIL=${powerFAIL}" >>${filenameForReport}
   echo "powerWARN=${powerWARN}" >>${filenameForReport}
   echo "powerMIN='${powerMIN} microVolt'" >>${filenameForReport}
   echo "tempFAIL=${tempFAIL}" >>${filenameForReport}
